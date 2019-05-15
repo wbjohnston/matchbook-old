@@ -93,6 +93,7 @@ impl OrderBook {
         return OrderId(i);
       }
     }
+    into.push(order);
     OrderId(into.len())
   }
 }
@@ -146,11 +147,12 @@ mod test {
   fn fills_symmetric_order() {
     let mut book = OrderBook::default();
     let (_, ask_fills) = book.submit_ask(AskOrder::new(Price(100), Quantity(100)));
+    dbg!(&book);
     let (_, bid_fills) = book.submit_bid(BidOrder::new(Price(100), Quantity(100)));
+    dbg!(&book);
 
     assert!(ask_fills.is_empty());
-    assert_eq!(bid_fills.len(), 1);
-    assert_eq!(bid_fills[0].filled, Quantity(100));
+    assert_eq!(bid_fills.first().map(|x| x.filled), Some(Quantity(100)));
     assert_eq!(book.bids().len(), 0);
     assert_eq!(book.asks().len(), 0);
   }
@@ -162,7 +164,6 @@ mod test {
     let (_, bid_fills) = book.submit_bid(BidOrder::new(Price(100), Quantity(100)));
 
     assert!(ask_fills.is_empty());
-    assert_eq!(bid_fills.len(), 1);
     assert_eq!(bid_fills.first().map(|x| x.filled), Some(Quantity(50)));
     assert_eq!(book.bids().len(), 1);
     assert_eq!(book.asks().len(), 0);
