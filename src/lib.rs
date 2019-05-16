@@ -1,270 +1,257 @@
 #![feature(test)]
-pub mod order;
+pub mod types;
 extern crate bitflags;
 extern crate derivative;
-extern crate static_assertions;
 
-use order::{AskOrder, BidOrder, Order, OrderId, Quantity};
+extern crate if_chain;
+
+use derivative::Derivative;
+use if_chain::if_chain;
+use std::cmp::Reverse;
+use std::collections::{BTreeMap, VecDeque};
+use types::*;
+
 
 #[derive(Debug, Clone, Default)]
 pub struct OrderBook {
-  // TODO: change this datastructure to `std::collections::BTreeMap` for a sorted map
-  bids: Vec<BidOrder>,
-  asks: Vec<AskOrder>,
+  asks: AskBook,
+  bids: BidBook,
 }
 
 impl OrderBook {
-  pub fn submit_ask(&mut self, ask: AskOrder) -> (OrderId, Vec<Fill>) {
-    Self::submit(ask, &mut self.asks, &mut self.bids)
+  pub fn insert_ask(&mut self, ask: Order) -> OrderId {
+    self.asks.insert(ask)
   }
 
-  pub fn submit_bid(&mut self, bid: BidOrder) -> (OrderId, Vec<Fill>) {
-    Self::submit(bid, &mut self.bids, &mut self.asks)
+  // pub fn insert_bid(&mut self, bid: Order) -> OrderId {
+  //   self.bids.insert(bid)
+  // }
+
+  pub fn cancel_ask(&mut self, id: OrderId) -> bool {
+    self.asks.cancel(id)
   }
 
-  // genericizing this seems like it was a huge waste of time imo, I feel like I
-  // just wrote the most overcomplicated code in my life.
-  // TODO: figure out if this code is even understandable
-  /// Submit
-  #[inline(always)]
-  fn submit<A: Order + Clone + AsRef<A>, B: Order + Clone + AsRef<B>>(
-    order: A,
-    into: &mut Vec<A>,
-    against: &mut Vec<B>,
-  ) -> (OrderId, Vec<Fill>) {
-    let id = Self::insert_into(order, into);
+  // pub fn cancel_bid(&mut self, id: OrderId) -> bool {
+  //   self.bids.cancel(id)
+  // }
 
-    // // match orders
-    if let Some(head) = against.first_mut() {
-      let fills: Vec<_> = OrderBook::matches_mut(head.clone(), into)
-        .map(|order_against| {
-          let filled = B::fill(head, order_against);
-          *order_against.filled_mut() += filled;
-          *head.filled_mut() += filled;
-
-          Fill {
-            // FIXME: get ids
-            ask_id: OrderId(0),
-            bid_id: OrderId(0),
-            filled,
-          }
-        })
-        .collect();
-
-      // cull filled orders
-      // TODO: replace this with removing keys from a b_tree_map
-      *into = into.iter().filter(|x| !x.is_filled()).cloned().collect();
-      *against = against.iter().filter(|x| !x.is_filled()).cloned().collect();
-
-      (id, fills)
-    } else {
-      (id, vec![])
-    }
+  pub fn execute_ask(&mut self, id: OrderId) -> Vec<Execution> {
+    unimplemented!()
   }
 
-  #[inline]
-  fn matches_mut<'f, A: Order + AsRef<A> + 'f, B: Order + AsRef<B>>(
-    order: A,
-    against: &'f mut Vec<B>,
-  ) -> impl Iterator<Item = &'f mut B> {
-    against
-      .iter_mut()
-      .filter(move |other_order| A::is_fillable_by(other_order.as_ref(), &order))
+  pub fn get_ask(&self, id: OrderId) -> Option<&Order> {
+    self.asks.get(id)
   }
 
-  /// Return immutable reference to asks, ordered by priority
-  #[inline]
-  pub fn asks(&self) -> &[AskOrder] {
-    self.asks.as_slice()
+  pub fn ask_market_price(&self) -> Option<Price> {
+    self.asks.market_price()
   }
 
-  /// Return immutable reference to bids, ordered by priority
-  #[inline]
-  pub fn bids(&self) -> &[BidOrder] {
-    self.bids.as_slice()
+  pub fn ask_limit_level(&self, price: Price) -> Option<Vec<Order>> {
+    self.asks.limit_level(price)
   }
 
-  /// Insert order into a list in sorted order and return the index of insertion
-  #[inline]
-  fn insert_into<T: Order>(order: T, into: &mut Vec<T>) -> OrderId {
-    for (i, other) in into.iter().enumerate() {
-      if order > *other {
-        into.insert(i, order);
-        return OrderId(i);
-      }
-    }
-    into.push(order);
-    OrderId(into.len())
+  pub fn execute_bid(&mut self, id: OrderId) -> Vec<Execution> {
+    unimplemented!()
   }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct BidBook {}
 
-#[derive(Debug, Clone, Copy)]
-pub struct Fill {
-  pub ask_id: OrderId,
-  pub bid_id: OrderId,
-  pub filled: Quantity,
+
+#[derive(Debug, Clone, Default)]
+struct AskBook {
+  limit_levels: BTreeMap<Price, VecDeque<OrderId>>,
+  orders: Vec<Order>,
+}
+
+impl AskBook {
+  /// Insert an order into the book
+  pub fn insert(&mut self, order: Order) -> OrderId {
+    assert_eq!(order.is_cancelled, false);
+    let id = self.orders.len().into();
+    let price = order.price;
+
+    self.orders.push(order);
+    self.limit_levels.entry(price).or_default().push_back(id);
+
+    id
+  }
+
+  /// Get an order from the book
+  pub fn get(&self, id: OrderId) -> Option<&Order> {
+    self.orders.get::<usize>(id.into())
+  }
+
+  pub fn execute(&mut self, bid: &mut Order) -> Vec<Execution> {
+    if let Some(limit_level) = self.limit_levels.get_mut(&bid.price) {
+
+      let mut executions = vec![];
+      let mut to_remove = vec![0];
+      while let Some(id) = limit_level.pop_front() {
+        let mut ask = self.orders.get_mut::<usize>(id.into()).unwrap();
+
+      }
+
+      executions
+    } else {
+      vec![]
+    }
+  }
+
+  pub fn cancel(&mut self, id: OrderId) -> bool {
+    if_chain! {
+      if let Some(order) = self.orders.get_mut::<usize>(id.into()); // order exists
+      // price level exists
+      if let Some(limit_level) = self.limit_levels.get_mut(&order.price);
+      // id is in the limit level
+      if let Some(removal_index) = limit_level.iter().enumerate().find(|(_, &x)| x == id).map(|(i, _)| i);
+      then {
+        order.is_cancelled = true;
+        limit_level.remove(removal_index);
+
+        // if no other prices at this limit level exist, remove it
+        if limit_level.is_empty() {
+          self.limit_levels.remove(&order.price);
+        }
+
+        true
+      } else {
+        false
+      }
+    }
+  }
+
+  pub fn market_price(&self) -> Option<Price> {
+    self.limit_levels.keys().cloned().next()
+  }
+
+  /// Return all orders at a limit
+  pub fn limit_level(&self, price: Price) -> Option<Vec<Order>> {
+    let get_order_from_id = |ids: &VecDeque<OrderId>| {
+      ids
+        .iter()
+        .map(|&id| self.orders.get::<usize>(id.into()).unwrap())
+        .cloned()
+        .collect()
+    };
+
+    self.limit_levels.get(&price).map(get_order_from_id)
+  }
 }
 
 #[cfg(test)]
 mod test {
   use super::*;
-  use order::Price;
+  extern crate rand;
+  use rand::{distributions::Distribution, SeedableRng};
 
   #[test]
-  fn inserts_bids_in_sorted_order() {
+  fn market_ask_price_is_lowest_price() {
     let mut book = OrderBook::default();
-    book.submit_bid(BidOrder::new(Price(1), Quantity(10)));
-    book.submit_bid(BidOrder::new(Price(3), Quantity(20)));
-    book.submit_bid(BidOrder::new(Price(2), Quantity(30)));
-    book.submit_bid(BidOrder::new(Price(500), Quantity(40)));
-    let is_sorted = book
-      .bids()
-      .windows(2)
-      .map(|window| (&window[0], &window[1]))
-      .all(|(a, b)| a > b && a.price >= b.price);
+    let mut rng = rand::rngs::SmallRng::from_seed([0; 16]);
+    let normal = rand::distributions::Normal::new(5_000.0, 10.0);
+    let orders: Vec<_> = (0..100_000)
+      .map(|_| Order::new(Price(normal.sample(&mut rng) as u64), Quantity(100)))
+      .collect();
 
-    assert!(is_sorted, "bids are not sorted from highest to lowest price")
+    orders.iter().for_each(|&x| {
+      book.insert_ask(x);
+    });
+
+    let lowest = orders.iter().map(|x| x.price).min();
+
+    assert_eq!(lowest, book.ask_market_price());
+
   }
 
   #[test]
-  fn inserts_asks_in_sorted_order() {
+  fn cancel_operates_correctly() {
     let mut book = OrderBook::default();
-    book.submit_ask(AskOrder::new(Price(1), Quantity(10)));
-    book.submit_ask(AskOrder::new(Price(3), Quantity(20)));
-    book.submit_ask(AskOrder::new(Price(2), Quantity(30)));
-    book.submit_ask(AskOrder::new(Price(500), Quantity(40)));
-    let is_sorted = book
-      .asks()
-      .windows(2)
-      .map(|window| (&window[0], &window[1]))
-      .all(|(a, b)| a > b && a.price <= b.price);
+    let order0 = Order::new(Price(100), Quantity(100));
+    let order1 = Order::new(Price(100), Quantity(50));
 
-    assert!(is_sorted, "asks are not sorted from lowest to highest price")
-  }
+    let id0 = book.insert_ask(order0);
+    let id1 = book.insert_ask(order1);
+    assert_eq!(book.ask_limit_level(Price(100)), Some(vec![order0, order1]));
+    assert!(!book.asks.limit_levels.is_empty());
 
-  #[test]
-  fn fills_symmetric_order() {
-    let mut book = OrderBook::default();
-    let (_, ask_fills) = book.submit_ask(AskOrder::new(Price(100), Quantity(100)));
-    dbg!(&book);
-    let (_, bid_fills) = book.submit_bid(BidOrder::new(Price(100), Quantity(100)));
-    dbg!(&book);
+    assert_eq!(book.get_ask(id1).map(|order| order.is_cancelled), Some(false));
+    assert_eq!(book.cancel_ask(id1), true);
+    assert_eq!(book.get_ask(id1).map(|order| order.is_cancelled), Some(true));
+    assert_eq!(book.ask_limit_level(Price(100)), Some(vec![order0]));
+    assert!(!book.asks.limit_levels.is_empty());
 
-    assert!(ask_fills.is_empty());
-    assert_eq!(bid_fills.first().map(|x| x.filled), Some(Quantity(100)));
-    assert_eq!(book.bids().len(), 0);
-    assert_eq!(book.asks().len(), 0);
-  }
-
-  #[test]
-  fn fills_assymetric_order() {
-    let mut book = OrderBook::default();
-    let (_, ask_fills) = book.submit_ask(AskOrder::new(Price(100), Quantity(50)));
-    let (_, bid_fills) = book.submit_bid(BidOrder::new(Price(100), Quantity(100)));
-
-    assert!(ask_fills.is_empty());
-    assert_eq!(bid_fills.first().map(|x| x.filled), Some(Quantity(50)));
-    assert_eq!(book.bids().len(), 1);
-    assert_eq!(book.asks().len(), 0);
-
-    let (_, ask_fills1) = book.submit_ask(AskOrder::new(Price(100), Quantity(50)));
-
-    dbg!(&book);
-
-    assert_eq!(ask_fills1.len(), 1);
-    assert_eq!(ask_fills1.first().map(|x| x.filled), Some(Quantity(50)));
-    assert_eq!(book.bids().len(), 0);
-    assert_eq!(book.asks().len(), 0);
-  }
-
-  #[test]
-  fn does_not_fill_orders_with_spread() {
-    // ask | bid
-    //     | 103
-    // 100 |
-    //     | 101
-    // 102
-    let mut book = OrderBook::default();
-    let (_, ask_fills0) = book.submit_ask(AskOrder::new(Price(100), Quantity(100)));
-    let (_, ask_fills1) = book.submit_ask(AskOrder::new(Price(102), Quantity(100)));
-    let (_, bid_fills0) = book.submit_bid(BidOrder::new(Price(101), Quantity(100)));
-    let (_, bid_fills1) = book.submit_bid(BidOrder::new(Price(103), Quantity(100)));
-
-    assert!(ask_fills0.is_empty());
-    assert!(bid_fills0.is_empty());
-    assert!(ask_fills1.is_empty());
-    assert!(bid_fills1.is_empty());
+    assert_eq!(book.get_ask(id0).map(|order| order.is_cancelled), Some(false));
+    assert_eq!(book.cancel_ask(id0), true);
+    assert_eq!(book.get_ask(id0).map(|order| order.is_cancelled), Some(true));
+    assert_eq!(book.ask_limit_level(Price(100)), None);
+    assert!(book.asks.limit_levels.is_empty());
   }
 }
 
 #[cfg(test)]
 mod bench {
-  use super::*;
-
-  extern crate lazy_static;
+  extern crate rand;
   extern crate test;
-  use lazy_static::lazy_static;
-  use order::Price;
-  use test::Bencher;
+  use super::*;
+  use rand::distributions::{Distribution, Normal};
+  use rand::{Rng, SeedableRng};
+  use test::{black_box, Bencher};
 
   #[bench]
-  fn submit_ask_with_empty_book(b: &mut Bencher) {
+  fn insert_1_order_with_1_single_limit_level(b: &mut Bencher) {
     let mut book = OrderBook::default();
-    let to_submit = AskOrder::new(Price(100), Quantity(100));
+    book.insert_ask(Order::new(Price(10), Quantity(100)));
+
     b.iter(|| {
-      let mut book = book.clone();
-      book.submit_ask(to_submit.clone());
-    })
+      let mut book = black_box(book.clone());
+      book.insert_ask(Order::new(Price(10), Quantity(100)));
+    });
   }
 
   #[bench]
-  fn submit_bid_with_empty_book(b: &mut Bencher) {
+  fn insert_1_order_with_100k_single_limit_level(b: &mut Bencher) {
     let mut book = OrderBook::default();
-    let to_submit = BidOrder::new(Price(100), Quantity(100));
+    for _ in 1..100_000 {
+      book.insert_ask(Order::new(Price(10), Quantity(100)));
+    }
+
     b.iter(|| {
-      let mut book = book.clone();
-      book.submit_bid(to_submit.clone());
-    })
+      let mut book = black_box(book.clone());
+      book.insert_ask(Order::new(Price(10), Quantity(100)));
+    });
   }
 
   #[bench]
-  fn submit_bid_with_1000_deep_asks(b: &mut Bencher) {
+  fn cancel_1_order_with_100k_single_limit_level(b: &mut Bencher) {
     let mut book = OrderBook::default();
-    let asks = (0..).map(|price| AskOrder::new(Price(price), Quantity(100))).take(1000);
-    for ask in asks {
-      book.submit_ask(ask);
+    for _ in 1..99_999 {
+      book.insert_ask(Order::new(Price(10), Quantity(100)));
     }
-    let to_submit = BidOrder::new(Price(100), Quantity(100));
+    let cancel_id = book.insert_ask(Order::new(Price(10), Quantity(100)));
+
     b.iter(|| {
-      let mut book = book.clone();
-      book.submit_bid(to_submit.clone());
-    })
+      let mut book = black_box(book.clone());
+      book.cancel_ask(cancel_id);
+    });
   }
 
   #[bench]
-  fn submit_bid_with_100000_deep_bids(b: &mut Bencher) {
-    let mut book = OrderBook::default();
-    let bids = (0..)
-      .skip(100000)
-      .map(|price| BidOrder::new(Price(price), Quantity(100)))
-      .take(100000);
-    let asks = (0..)
-      .map(|price| AskOrder::new(Price(price), Quantity(100)))
-      .take(100000);
+  fn insert_100k_orders_normal_random_prices(b: &mut Bencher) {
+    let book = OrderBook::default();
+    let mut rng = rand::rngs::SmallRng::from_seed([0; 16]);
+    let normal = Normal::new(5_000.0, 10.0);
+    let orders: Vec<_> = (0..100_000)
+      .map(|_| Order::new(Price(normal.sample(&mut rng) as u64), Quantity(100)))
+      .collect();
 
-    for bid in bids {
-      book.submit_bid(bid);
-    }
-
-    for ask in asks {
-      book.submit_ask(ask);
-    }
-
-    let to_submit = BidOrder::new(Price(100001), Quantity(100));
     b.iter(|| {
-      let mut book = book.clone();
-      book.submit_bid(to_submit.clone());
+      let mut book = black_box(book.clone());
+      orders.clone().into_iter().for_each(|o| {
+        book.insert_ask(o);
+      });
     })
   }
 }
