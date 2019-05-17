@@ -8,7 +8,7 @@ extern crate if_chain;
 use if_chain::if_chain;
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, VecDeque};
-use types::*;
+pub use types::*;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct OrderBook {
@@ -136,6 +136,7 @@ where
 {
   limit_levels: BTreeMap<P, VecDeque<OrderId>>,
   orders: Vec<Order>,
+  // TODO: add id -> limit level index map for fast access and deletion
 }
 
 impl<P> LimitLevels<P>
