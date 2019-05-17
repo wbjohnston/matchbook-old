@@ -1,12 +1,28 @@
 //! Order strucuts
 
+
 use derivative::Derivative;
 use derive_more::{Add, AddAssign, From, Into, Sub};
-// TODO: ord needs to be reversed for this type so that the *oldest* id takes priority
+use std::cmp::Reverse;
+
+pub type OrderIdInner = usize;
+
 /// An `Order` id
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Default, AddAssign, Derivative, From, Into)]
 #[derivative(Debug = "transparent")]
-pub struct OrderId(pub usize);
+pub struct OrderId(pub OrderIdInner);
+
+impl From<Price> for Reverse<Price> {
+  fn from(value: Price) -> Self {
+    Reverse(value)
+  }
+}
+
+impl Into<Price> for Reverse<Price> {
+  fn into(self) -> Price {
+    self.0
+  }
+}
 
 impl Ord for OrderId {
   fn cmp(&self, other: &Self) -> std::cmp::Ordering {
@@ -20,15 +36,19 @@ impl PartialOrd for OrderId {
   }
 }
 
+pub type PriceInner = u32;
+
 /// An integer price
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Add, AddAssign, Sub, Derivative, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Add, AddAssign, Sub, Derivative, Default, From, Into)]
 #[derivative(Debug = "transparent")]
-pub struct Price(pub u64);
+pub struct Price(pub PriceInner);
+
+pub type QuantityInner = u32;
 
 /// A quantity
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Add, AddAssign, Sub, Derivative, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Add, AddAssign, Sub, Derivative, Default, From, Into)]
 #[derivative(Debug = "transparent")]
-pub struct Quantity(pub u64);
+pub struct Quantity(pub QuantityInner);
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Order {
@@ -47,11 +67,8 @@ impl Order {
       is_cancelled: false,
     }
   }
-}
 
-#[derive(Debug, Clone, Copy)]
-pub struct Execution {
-  pub ask_id: OrderId,
-  pub bid_id: OrderId,
-  pub filled: Quantity,
+  pub fn remaining(&self) -> Quantity {
+    self.quantity - self.filled
+  }
 }
