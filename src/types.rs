@@ -5,12 +5,10 @@ use derivative::Derivative;
 use derive_more::{Add, AddAssign, From, Into, Sub};
 use std::cmp::Reverse;
 
-pub type OrderIdInner = usize;
-
 /// An `Order` id
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Default, AddAssign, Derivative, From, Into)]
 #[derivative(Debug = "transparent")]
-pub struct OrderId(pub OrderIdInner);
+pub struct OrderId(usize);
 
 impl From<Price> for Reverse<Price> {
   fn from(value: Price) -> Self {
@@ -36,20 +34,17 @@ impl PartialOrd for OrderId {
   }
 }
 
-pub type PriceInner = u32;
-
 /// An integer price
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Add, AddAssign, Sub, Derivative, Default, From, Into)]
 #[derivative(Debug = "transparent")]
-pub struct Price(pub PriceInner);
-
-pub type QuantityInner = u32;
+pub struct Price(u32);
 
 /// A quantity
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Add, AddAssign, Sub, Derivative, Default, From, Into)]
 #[derivative(Debug = "transparent")]
-pub struct Quantity(pub QuantityInner);
+pub struct Quantity(u32);
 
+/// An order
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Order {
   pub price: Price,
@@ -68,7 +63,24 @@ impl Order {
     }
   }
 
+  pub const fn new_partially_filled(price: Price, quantity: Quantity, filled: Quantity) -> Self {
+    Self {
+      price,
+      quantity,
+      filled,
+      is_cancelled: false,
+    }
+  }
+
   pub fn remaining(&self) -> Quantity {
     self.quantity - self.filled
   }
+}
+
+
+/// Side of an order
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Side {
+  Bid,
+  Ask,
 }
