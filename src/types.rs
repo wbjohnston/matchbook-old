@@ -1,12 +1,36 @@
-//! Order strucuts
-
+//! Order structs
 
 use derivative::Derivative;
-use derive_more::{Add, AddAssign, From, Into, Sub};
+use derive_more::{Add, AddAssign, From, Into, Sub, Display};
+use serde_derive::{Deserialize, Serialize};
 use std::cmp::Reverse;
 
-/// An `Order` id
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Default, AddAssign, Derivative, From, Into)]
+
+/// A product symbol
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Derivative)]
+#[derivative(Debug = "transparent")]
+pub struct Symbol([char; 4]);
+
+impl std::fmt::Display for Symbol {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+      write!(f, "{}{}{}{}", self.0[0], self.0[1], self.0[2], self.0[3])
+    }
+}
+
+/// Side of an order
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Display, Hash)]
+pub enum Side {
+  Bid,
+  Ask,
+}
+
+/// An account ID
+#[derive(Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize, Display, Add, AddAssign, Derivative, From, Into)]
+#[derivative(Debug = "transparent")]
+pub struct AccountId(usize);
+
+/// An `Order` id local to the book
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Default, AddAssign, Derivative, From, Into, Serialize, Deserialize, Display)]
 #[derivative(Debug = "transparent")]
 pub struct OrderId(usize);
 
@@ -35,17 +59,51 @@ impl PartialOrd for OrderId {
 }
 
 /// An integer price
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Add, AddAssign, Sub, Derivative, Default, From, Into)]
+#[derive(
+  Clone,
+  Copy,
+  PartialEq,
+  Eq,
+  PartialOrd,
+  Ord,
+  Add,
+  AddAssign,
+  Sub,
+  Derivative,
+  Default,
+  From,
+  Into,
+  Serialize,
+  Deserialize,
+  Display,
+)]
 #[derivative(Debug = "transparent")]
 pub struct Price(u32);
 
 /// A quantity
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Add, AddAssign, Sub, Derivative, Default, From, Into)]
+#[derive(
+  Clone,
+  Copy,
+  PartialEq,
+  Eq,
+  PartialOrd,
+  Ord,
+  Add,
+  AddAssign,
+  Sub,
+  Derivative,
+  Default,
+  From,
+  Into,
+  Serialize,
+  Deserialize,
+  Display,
+)]
 #[derivative(Debug = "transparent")]
 pub struct Quantity(u32);
 
 /// An order
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Order {
   pub price: Price,
   pub quantity: Quantity,
@@ -63,7 +121,8 @@ impl Order {
     }
   }
 
-  pub const fn new_partially_filled(price: Price, quantity: Quantity, filled: Quantity) -> Self {
+  pub fn new_partially_filled(price: Price, quantity: Quantity, filled: Quantity) -> Self {
+    assert!(quantity > filled);
     Self {
       price,
       quantity,
@@ -75,12 +134,8 @@ impl Order {
   pub fn remaining(&self) -> Quantity {
     self.quantity - self.filled
   }
-}
 
-
-/// Side of an order
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Side {
-  Bid,
-  Ask,
+  pub fn is_filled(&self) -> bool {
+    self.filled >= self.quantity
+  }
 }
