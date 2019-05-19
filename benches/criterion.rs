@@ -10,11 +10,11 @@ fn bench_inserts(c: &mut Criterion) {
     |b, &n_orders| {
       let mut book = OrderBook::default();
       for _ in 0..n_orders as usize {
-        book.insert_ask(Order::new(Price(100), Quantity(100)));
+        book.insert_ask(Order::new(100.into(), 100.into()));
       }
 
       b.iter(|| {
-        book.insert_ask(Order::new(Price(100), Quantity(100)));
+        book.insert_ask(Order::new(100.into(), 100.into()));
       });
     },
     (0..5).map(|x| 10usize.pow(x)).collect::<Vec<usize>>(),
@@ -27,9 +27,9 @@ fn bench_cancels(c: &mut Criterion) {
     |b, &n_orders| {
       let mut book = OrderBook::default();
       for _ in 0..n_orders - 1 as usize {
-        book.insert_ask(Order::new(Price(100), Quantity(100)));
+        book.insert_ask(Order::new(100.into(), 100.into()));
       }
-      let id = book.insert_ask(Order::new(Price(100), Quantity(100)));
+      let id = book.insert_ask(Order::new(100.into(), 100.into()));
 
       b.iter(|| book.cancel_ask(id));
     },
