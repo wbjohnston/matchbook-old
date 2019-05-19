@@ -1,29 +1,15 @@
 use crate::book::OrderBook;
 use crate::types::*;
-use serde_derive::{Deserialize, Serialize};
-use std::collections::HashMap;
-use failure::Fail;
-use derive_more::{Display, Add, AddAssign, From, Into};
 use derivative::Derivative;
+use derive_more::{Add, AddAssign, Display, From, Into};
+use failure::Fail;
+use std::collections::HashMap;
+use serde_derive::{Serialize, Deserialize};
 
 // TODO: do not leak out newtypes for this API
 
 /// An order ID
-#[derive(
-  Clone,
-  Copy,
-  Serialize,
-  Deserialize,
-  PartialEq,
-  Eq,
-  Hash,
-  Display,
-  Add,
-  AddAssign,
-  From,
-  Into,
-  Derivative
-)]
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, Display, Add, AddAssign, From, Into, Derivative)]
 #[derivative(Debug = "transparent")]
 pub struct Id(usize);
 
@@ -31,17 +17,11 @@ pub struct Id(usize);
 #[derive(Debug, Clone, Copy, Fail, Serialize, Deserialize)]
 pub enum Error {
   #[fail(display = "account number '{}' does not exist", id)]
-  AccountDoesNotExist {
-    id: AccountId
-  },
+  AccountDoesNotExist { id: AccountId },
   #[fail(display = "symbol '{}' does not exist", symbol)]
-  SymbolDoesNotExist {
-    symbol: Symbol
-  },
+  SymbolDoesNotExist { symbol: Symbol },
   #[fail(display = "order with id '{}' does not exist", id)]
-  IdDoesNotExist {
-    id: Id
-  },
+  IdDoesNotExist { id: Id },
 }
 
 /// A match engine command
@@ -104,85 +84,64 @@ impl MatchEngine {
       Self::validate_command_against_account(account, &command.kind)?;
       match command.kind {
         ExecuteOrder(id) => {
-          // TODO: rewrite this to be more clear
-          if let Some(&(symbol, side, book_id)) = self.id_to_order_path_index.get(&id) {
-            if let Some(book) = self.books.get_mut(&symbol) {
-              let executions = book.execute(side, book_id)
-                .iter()
-                .cloned()
-                // FIXME: this is no good
-                .map(|(id, quantity)| (self.order_path_to_id_index.get(&(symbol, side, id)).cloned().unwrap(), quantity))
-                .collect();
+          let (symbol, side, book_id) = self.try_get_order_path(id)?;
+          let book = self.try_get_book_mut(symbol)?;
+          let executions = book
+            .execute(side, book_id)
+            .iter()
+            .cloned()
+            // FIXME: this is no good
+            .map(|(id, quantity)| {
+              (
+                self.order_path_to_id_index.get(&(symbol, side, id)).cloned().unwrap(),
+                quantity,
+              )
+            })
+            .collect();
 
-              Ok(Success::ExecuteOrder(executions))
-            } else {
-              Err(Error::SymbolDoesNotExist { symbol })
-            }
-          } else {
-            Err(Error::IdDoesNotExist{ id })
-          }
+          Ok(Success::ExecuteOrder(executions))
         }
         GetOrder(id) => {
-          // TODO: rewrite this to be more clear
-          if let Some(&(symbol, side, book_id)) = self.id_to_order_path_index.get(&id) {
-            if let Some(book) = self.books.get(&symbol) {
-              if let Some(order) = book.get(side, book_id) {
-                Ok(Success::GetOrder(*order))
-              } else {
-                unreachable!("should've kept the mapping straight")
-              }
-            } else {
-              Err(Error::SymbolDoesNotExist { symbol })
-            }
-          } else {
-            Err(Error::IdDoesNotExist{ id })
-          }
-        },
+          let (symbol, side, book_id) = self.try_get_order_path(id)?;
+          let book = self.try_get_book_mut(symbol)?;
+          Ok(Success::GetOrder(*book.get(side, book_id).unwrap()))
+        }
 
         PlaceOrder(side, symbol, order) => {
-          if let Some(book) = self.books.get_mut(&symbol) {
-            let book_id = book.insert(side, order);
-            let id = self.next_order_id;
-            self.next_order_id += 1.into();
-            self.id_to_order_path_index.insert(id, (symbol, side, book_id));
-            self.order_path_to_id_index.insert((symbol, side, book_id), id);
+          let book = self.try_get_book_mut(symbol)?;
+          let book_id = book.insert(side, order);
+          let id = self.next_order_id;
+          self.next_order_id += 1.into();
+          self.id_to_order_path_index.insert(id, (symbol, side, book_id));
+          self.order_path_to_id_index.insert((symbol, side, book_id), id);
 
-            Ok(Success::PlaceOrder(id))
-          } else {
-            Err(Error::SymbolDoesNotExist { symbol })
-          }
-        },
+          Ok(Success::PlaceOrder(id))
+        }
 
         CancelOrder(id) => {
-          if let Some(&(symbol, side, book_id)) = self.id_to_order_path_index.get(&id) {
-            if let Some(book) = self.books.get_mut(&symbol) {
-              Ok(Success::CancelOrder(book.cancel(side, book_id)))
-            } else {
-              Err(Error::SymbolDoesNotExist { symbol })
-            }
-          } else {
-            Err(Error::IdDoesNotExist{ id })
-          }
-        },
+          let (symbol, side, book_id) = self.try_get_order_path(id)?;
+          let book = self.try_get_book_mut(symbol)?;
+          Ok(Success::CancelOrder(book.cancel(side, book_id)))
+        }
 
         GetQuote(symbol, side) => {
           if let Some(book) = self.books.get(&symbol) {
             Ok(Success::GetQuote(book.best_price(side)))
           } else {
-            Err(Error::SymbolDoesNotExist{ symbol })
+            Err(Error::SymbolDoesNotExist { symbol })
           }
-        },
+        }
 
         GetAccount(id) => {
           if let Some(account) = self.accounts.get(&id) {
             Ok(Success::GetAccount(account.clone()))
           } else {
-            Err(Error::AccountDoesNotExist{ id })
+            Err(Error::AccountDoesNotExist { id })
           }
         }
       }
     } else {
-      Err(Error::AccountDoesNotExist{ id: command.account_id})
+      Err(Error::AccountDoesNotExist { id: command.account_id })
     }
   }
 
@@ -204,13 +163,39 @@ impl MatchEngine {
 
   fn validate_command_against_account(_account: &Account, _command: &CommandKind) -> Result<(), Error> {
     match _command {
-      _ => unimplemented!()
+      _ => unimplemented!(),
     }
+  }
+
+  fn try_get_account_mut(&mut self, id: AccountId) -> Result<&mut Account, Error> {
+    if let Some(account) = self.accounts.get_mut(&id) {
+      Ok(account)
+    } else {
+      Err(Error::AccountDoesNotExist { id })
+    }
+  }
+
+  fn try_get_book_mut(&mut self, symbol: Symbol) -> Result<&mut OrderBook, Error> {
+    if let Some(book) = self.books.get_mut(&symbol) {
+      Ok(book)
+    } else {
+      Err(Error::SymbolDoesNotExist { symbol })
+    }
+  }
+
+  fn try_get_order_path(&self, id: Id) -> Result<OrderPath, Error> {
+    if let Some(path) = self.id_to_order_path_index.get(&id) {
+      Ok(*path)
+    } else {
+      Err(Error::IdDoesNotExist { id })
+    }
+  }
+
+  fn try_get_path_from_id(&self) -> OrderPath {
+    unimplemented!()
   }
 }
 
 
 #[cfg(test)]
-mod test {
-
-}
+mod test {}
