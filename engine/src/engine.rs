@@ -51,7 +51,7 @@ pub enum Success {
   GetOrder(Order),
   PlaceOrder(Id),
   CancelOrder(bool),
-  ExecuteOrder(Vec<(Id, Quantity)>),
+  ExecuteOrder(bool, Vec<(Id, Quantity, bool)>),
   GetQuote(Price),
   GetAccount(Account),
 }
@@ -89,20 +89,22 @@ impl MatchEngine {
         ExecuteOrder(id) => {
           let (symbol, side, book_id) = self.try_get_order_path(id)?;
           let book = self.try_get_book_mut(symbol)?;
-          let executions = book
-            .execute(side, book_id)
+          let (is_filled, executions) = book.execute(side, book_id);
+
+          let executions = executions
             .iter()
             .cloned()
             // FIXME: this is no good
-            .map(|(id, quantity)| {
+            .map(|(id, quantity, is_filled)| {
               (
                 self.order_path_to_id_index.get(&(symbol, side, id)).cloned().unwrap(),
                 quantity,
+                is_filled
               )
             })
             .collect();
 
-          Ok(Success::ExecuteOrder(executions))
+          Ok(Success::ExecuteOrder(is_filled, executions))
         }
         GetOrder(id) => {
           let (symbol, side, book_id) = self.try_get_order_path(id)?;
@@ -117,6 +119,7 @@ impl MatchEngine {
           self.next_order_id += 1.into();
           self.id_to_order_path_index.insert(id, (symbol, side, book_id));
           self.order_path_to_id_index.insert((symbol, side, book_id), id);
+          self.books.get_mut(&symbol).map(|book| book.execute(Side::Ask, book_id));
 
           Ok(Success::PlaceOrder(id))
         }

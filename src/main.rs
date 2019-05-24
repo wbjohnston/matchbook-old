@@ -1,5 +1,5 @@
 use clap::{App, Arg};
-use core::*;
+use engine::*;
 
 use failure::Error;
 
@@ -17,10 +17,10 @@ fn handle_connection(stream: TcpStream, engine: Arc<Mutex<MatchEngine>>) {
     Result::ok(x)
   }) {
     let mut lock = engine.lock().unwrap();
-    lock.try_process(command);
+    // TODO: need to send this result back
+    let _ = lock.try_process(command);
     dbg!(&lock);
   }
-
 }
 
 fn main() -> Result<(), Error> {
@@ -40,6 +40,7 @@ fn main() -> Result<(), Error> {
 
   let listener = TcpListener::bind(format!("127.0.0.1:{}", port))?;
   for stream in listener.incoming() {
+    // FIXME: this shouldn't return out of main
     let stream = stream?;
     let engine = engine.clone();
     thread::spawn(move || {

@@ -7,8 +7,9 @@ edition = "2018"
 [features]
 
 [dependencies]
-core = { path = "./engine" }
+engine = { path = "./engine" }
 clap = "2.33"
 failure = "0.1"
 serde_json = "1.0"
 serde = "1.0"
+log = "0.4"

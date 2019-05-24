@@ -32,7 +32,7 @@ impl OrderBook {
     side: Side,
     id: OrderId,
     maybe_price: Option<Price>,
-    maybe_quantity: Option<Quantity>
+    maybe_quantity: Option<Quantity>,
   ) -> bool {
     use Side::*;
     match side {
@@ -78,7 +78,7 @@ impl OrderBook {
   }
 
   /// Execute an order
-  pub fn execute(&mut self, side: Side, id: OrderId) -> Vec<(OrderId, Quantity)> {
+  pub fn execute(&mut self, side: Side, id: OrderId) -> (bool, Vec<(OrderId, Quantity, bool)>) {
     use Side::*;
     match side {
       Bid => {
@@ -87,7 +87,7 @@ impl OrderBook {
         } else {
           unimplemented!()
         }
-      },
+      }
       Ask => {
         if let Some(order) = self.asks.get_mut(id) {
           self.bids.execute(order)
@@ -106,11 +106,14 @@ impl OrderBook {
     }
   }
 
-  pub fn first(&self, side: Side) -> Option<&Order> {
+  pub fn first(&self) -> Option<(Side, OrderId)> {
     use Side::*;
-    match side {
-      Ask => self.asks.first(),
-      Bid => self.bids.first(),
+    match (self.asks.first(), self.bids.first()) {
+      (Some(ask), Some(bid)) if ask < bid => Some((Ask, ask)),
+      (Some(_), Some(bid)) => Some((Bid, bid)),
+      (Some(ask), None) => Some((Ask, ask)),
+      (None, Some(bid)) => Some((Bid, bid)),
+      _ => None,
     }
   }
 }
@@ -130,17 +133,26 @@ impl<P> LimitLevels<P>
 where
   P: Ord + From<Price> + Into<Price> + Clone,
 {
-  pub fn first(&self) -> Option<&Order> {
+  pub fn first(&self) -> Option<OrderId> {
     self
       .limit_levels
       .values()
       .next()
-      .and_then(VecDeque::front)
-      .and_then(|&id| self.orders.get::<usize>(id.into()))
+      .and_then(|x| VecDeque::front(x).map(|x| *x))
+  }
+
+  pub fn remove_from_level(&mut self, id: OrderId) -> bool {
+    unimplemented!()
   }
 
   pub fn best_price(&self) -> Price {
-    self.limit_levels.keys().next().cloned().map(Into::into).unwrap_or_default()
+    self
+      .limit_levels
+      .keys()
+      .next()
+      .cloned()
+      .map(Into::into)
+      .unwrap_or_default()
   }
 
   /// Insert an order into the book
@@ -182,40 +194,40 @@ where
     self.orders.get::<usize>(id.into())
   }
 
-  pub fn execute(&mut self, bid: &mut Order) -> Vec<(OrderId, Quantity)> {
-    if bid.remaining() == 0.into() {
-      return vec![];
+  pub fn execute(&mut self, order: &mut Order) -> (bool, Vec<(OrderId, Quantity, bool)>) {
+    if order.remaining() == 0.into() {
+      return (true, vec![]);
     }
 
     let mut should_remove_level = false; // FIXME: I don't like using this
     let mut executions = vec![]; // FIXME: I don't like using this
-    if let Some(limit_level) = self.limit_levels.get_mut(&P::from(bid.price)) {
+    if let Some(limit_level) = self.limit_levels.get_mut(&P::from(order.price)) {
       while let Some(id) = limit_level.pop_front() {
-        let ask = self.orders.get_mut::<usize>(id.into()).unwrap();
-        let to_fill = ask.remaining().min(bid.remaining()); // number of fills are bounded by the least remaining
-        bid.filled += to_fill;
-        ask.filled += to_fill;
+        let against = self.orders.get_mut::<usize>(id.into()).unwrap();
+        let to_fill = against.remaining().min(order.remaining()); // number of fills are bounded by the least remaining
+        order.filled += to_fill;
+        against.filled += to_fill;
 
         // push order back to front if it's not filled
-        if ask.is_filled() {
+        if against.is_filled() {
           limit_level.push_front(id);
         } else if limit_level.is_empty() {
           should_remove_level = true;
         }
 
-        executions.push((id, to_fill));
+        executions.push((id, to_fill, against.is_filled()));
 
-        if bid.filled == bid.quantity {
+        if order.filled == order.quantity {
           break;
         }
       }
     }
 
     if should_remove_level {
-      self.limit_levels.remove(&bid.price.into());
+      self.limit_levels.remove(&order.price.into());
     }
 
-    executions
+    (order.is_filled(), executions)
   }
 
   pub fn cancel(&mut self, id: OrderId) -> bool {
@@ -251,7 +263,10 @@ where
 
   /// Return all orders id at a limit
   pub fn level(&self, price: Price) -> Option<Vec<OrderId>> {
-    self.limit_levels.get(&price.into()).map(|level| level.iter().cloned().collect())
+    self
+      .limit_levels
+      .get(&price.into())
+      .map(|level| level.iter().cloned().collect())
   }
 }
 
