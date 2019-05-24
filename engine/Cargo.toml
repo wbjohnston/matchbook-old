@@ -1,0 +1,22 @@
+[package]
+name = "engine"
+version = "0.1.0"
+authors = ["Will Johnston <wbjohnston@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+bitflags = "1.0"
+derive_more = "0.14"
+shrinkwraprs = "0.2"
+derivative = "1.0"
+static_assertions = "0.3"
+if_chain = "0.1"
+serde_derive = "1.0"
+serde = "1.0"
+failure = "0.1"
+
+[dev-dependencies]
+quickcheck = "0.8"
+lazy_static = "1.3"
+rand = "0.6"
+criterion = "0.2"

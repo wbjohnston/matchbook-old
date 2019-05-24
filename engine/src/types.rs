@@ -7,7 +7,7 @@ use std::cmp::Reverse;
 
 
 /// A product symbol
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Derivative)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Derivative, From, Into)]
 #[derivative(Debug = "transparent")]
 pub struct Symbol([char; 4]);
 
@@ -25,7 +25,7 @@ pub enum Side {
 }
 
 /// An account ID
-#[derive(Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize, Display, Add, AddAssign, Derivative, From, Into)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize, Display, Add, AddAssign, Derivative, From, Into, Default)]
 #[derivative(Debug = "transparent")]
 pub struct AccountId(usize);
 
@@ -103,7 +103,7 @@ pub struct Price(u32);
 pub struct Quantity(u32);
 
 /// An order
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct Order {
   pub price: Price,
   pub quantity: Quantity,

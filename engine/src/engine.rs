@@ -3,13 +3,16 @@ use crate::types::*;
 use derivative::Derivative;
 use derive_more::{Add, AddAssign, Display, From, Into};
 use failure::Fail;
+use serde_derive::{Deserialize, Serialize};
 use std::collections::HashMap;
-use serde_derive::{Serialize, Deserialize};
+
 
 // TODO: do not leak out newtypes for this API
 
 /// An order ID
-#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, Display, Add, AddAssign, From, Into, Derivative)]
+#[derive(
+  Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, Display, Add, AddAssign, From, Into, Derivative, Default,
+)]
 #[derivative(Debug = "transparent")]
 pub struct Id(usize);
 
@@ -27,8 +30,8 @@ pub enum Error {
 /// A match engine command
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Command {
-  account_id: AccountId,
-  kind: CommandKind,
+  pub account_id: AccountId,
+  pub kind: CommandKind,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -64,7 +67,7 @@ pub struct Account {
 type OrderPath = (Symbol, Side, OrderId);
 
 /// A central limit order book matching engine
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct MatchEngine {
   books: HashMap<Symbol, OrderBook>,
   // NOTE: since id's are given out sequentially and nothing is ever deleted, this can be a Vec
@@ -81,7 +84,7 @@ impl MatchEngine {
     use CommandKind::*;
 
     if let Some(account) = self.accounts.get_mut(&command.account_id) {
-      Self::validate_command_against_account(account, &command.kind)?;
+      // Self::validate_command_against_account(account, &command.kind)?;
       match command.kind {
         ExecuteOrder(id) => {
           let (symbol, side, book_id) = self.try_get_order_path(id)?;
